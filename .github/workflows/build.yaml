@@ -6,6 +6,7 @@ on:
   push:
     branches:
       - master
+      - rewrite
 
 jobs:
   build:
@@ -22,6 +23,7 @@ jobs:
       run: |
           git config --global --add safe.directory '*' && \
           git submodule update --init --remote
+          dkp-pacman -Syu devkitpro-portlibs-switch
           mkdir build
           cd build 
           cmake ..
