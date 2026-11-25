@@ -28,6 +28,7 @@ set(LEXBOR_DIR third_parties/lexbor)
 add_subdirectory(${LEXBOR_DIR} ${PROJECT_BINARY_DIR}/lexbor)
 add_executable(${TARGET}
   source/pugixml/pugixml.cpp
+  source/httpclient/HTTPClient.cpp
   source/clients/apache.cpp
   source/clients/archiveorg.cpp
   source/clients/baseclient.cpp
@@ -81,7 +82,6 @@ target_link_libraries(${TARGET} PUBLIC
   lz4
   lzma
   expat
-  httpclient
   smb2
   json-c
   glad
