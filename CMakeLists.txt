@@ -14,6 +14,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive")
 set(TARGET ${PROJECT_NAME})
 set(IMGUI_DIR third_parties/imgui)
 set(LIBNSBMP third_parties/libnsbmp)
+file(GLOB LIBSMB2_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/third_parties/libsmb2/lib/*.c)
 add_definitions("-D_U_=")
 add_definitions("-DHAVE_STRING_H -DHAVE_STDLIB_H -DHAVE_NETINET_IN_H -DHAVE_NETINET_TCP_H")
 
@@ -22,6 +23,9 @@ include_directories(
   source/pugixml
   third_parties
   ${LIBNSBMP}
+  third_parties/libsmb2-build
+  third_parties/libsmb2/include/smb2
+  third_parties/libsmb2/include
   ${LEXBOR_DIR}/src
 )
 set(LEXBOR_DIR third_parties/lexbor)
@@ -39,6 +43,8 @@ add_executable(${TARGET}
   source/clients/npxserve.cpp
   source/clients/rclone.cpp
   source/clients/smbclient.cpp
+  third_parties/libsmb2-build/iovec_compat.c
+  ${LIBSMB2_SOURCES}
   source/clients/ftpclient.cpp
   source/clients/webdav.cpp
   source/main.cpp
@@ -61,8 +67,17 @@ add_executable(${TARGET}
   ${IMGUI_DIR}/misc/freetype/imgui_freetype.cpp
   )
   
+# libsmb2 源码内联编译：用独立 config.h（避免与 source/config.h 冲突）
+set_source_files_properties(${LIBSMB2_SOURCES} PROPERTIES
+  COMPILE_OPTIONS "-D__SWITCH__;-iquote${CMAKE_CURRENT_SOURCE_DIR}/third_parties/libsmb2-build;-iquote${CMAKE_CURRENT_SOURCE_DIR}/third_parties/libsmb2/lib")
+
+# smbclient.cpp 使用 <smb2/smb2.h>（portlibs 布局），通过 -iquote 映射到 libsmb2/include 根目录
+set_source_files_properties(source/clients/smbclient.cpp PROPERTIES
+  COMPILE_OPTIONS "-iquote${CMAKE_CURRENT_SOURCE_DIR}/third_parties/libsmb2/include")
+
 target_compile_features(${TARGET} PUBLIC cxx_std_17)
 target_compile_definitions(${TARGET} PUBLIC
+  HAVE_CONFIG_H
   IMGUI_DISABLE_OBSOLETE_KEYIO
   IMGUI_DISABLE_OBSOLETE_FUNCTIONS
   IMGUI_IMPL_OPENGL_LOADER_GLAD
@@ -82,7 +97,6 @@ target_link_libraries(${TARGET} PUBLIC
   lz4
   lzma
   expat
-  smb2
   json-c
   glad
   EGL
@@ -99,7 +113,6 @@ target_link_libraries(${TARGET} PUBLIC
   mbedtls
   mbedcrypto
   mbedx509
-  crypto
   z
 )
 

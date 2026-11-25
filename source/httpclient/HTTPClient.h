@@ -3,6 +3,8 @@
 #include <string>
 #include <map>
 #include <functional>
+#include <vector>
+#include <cstdarg>
 #include <curl/curl.h>
 
 class CHTTPClient
@@ -19,6 +21,38 @@ public:
     };
 
     using HeadersMap = std::map<std::string, std::string>;
+    using PostFormContent = std::map<std::string, std::string>;
+
+    // multipart 表单字段：普通文本内容或本地文件（fileField 非空时以文件名上传）
+    struct FormField
+    {
+        std::string name;
+        std::string content;
+        std::string fileField;
+    };
+
+    class PostFormInfo
+    {
+    public:
+        void AddFormContent(const std::string &name, const std::string &value)
+        {
+            FormField field;
+            field.name = name;
+            field.content = value;
+            fields.push_back(field);
+        }
+
+        void AddFormField(const std::string &name, const std::string &content, const std::string &fileName)
+        {
+            FormField field;
+            field.name = name;
+            field.content = content;
+            field.fileField = fileName;
+            fields.push_back(field);
+        }
+
+        std::vector<FormField> fields;
+    };
 
     struct ProgressFnStruct
     {
@@ -36,6 +70,7 @@ public:
     ~CHTTPClient();
 
     void SetBasicAuth(const std::string &user, const std::string &pass);
+    void SetCookie(const std::string &name, const std::string &value);
     void InitSession(bool verifyPeer, SettingsFlag);
     void SetCertificateFile(const std::string &path);
 
@@ -45,6 +80,8 @@ public:
     bool Get(const std::string &url, const HeadersMap &headers, HttpResponse &out);
     bool DownloadFile(const std::string &outputPath, const std::string &url, long &status);
     bool UploadFile(const std::string &inputPath, const std::string &url, long &status);
+    bool UploadForm(const std::string &url, const HeadersMap &headers, const PostFormInfo &form, HttpResponse &out);
+    bool Post(const std::string &url, const HeadersMap &headers, HttpResponse &out);
     bool CustomRequest(const std::string &method, const std::string &url, const HeadersMap &headers, HttpResponse &out);
 
     void CleanupSession();
@@ -60,6 +97,9 @@ private:
     std::string pass;
     std::string caFile;
     std::string activeUrl;
+
+    // 手动设置的 Cookie（优先级高于服务器 Set-Cookie）
+    std::map<std::string, std::string> cookies;
 
     ProgressFnStruct progressOwner;
     int (*progressFn)(void *, double, double, double, double) = nullptr;

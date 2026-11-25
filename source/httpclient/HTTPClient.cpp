@@ -27,6 +27,11 @@ CHTTPClient::CHTTPClient(LogFn logFn)
 {
 }
 
+void CHTTPClient::SetCookie(const std::string &name, const std::string &value)
+{
+    cookies[name] = value;
+}
+
 CHTTPClient::~CHTTPClient()
 {
     if (curl)
@@ -122,6 +127,19 @@ void CHTTPClient::applyCommonOptions(const std::string &url)
     curl_easy_setopt(curl, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
     curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
     curl_easy_setopt(curl, CURLOPT_MAXCONNECTS, 64L);
+
+    if (!cookies.empty())
+    {
+        std::string cookieLine;
+        for (const auto &kv : cookies)
+        {
+            if (!cookieLine.empty())
+                cookieLine += "; ";
+            cookieLine += kv.first + "=" + kv.second;
+        }
+        curl_easy_setopt(curl, CURLOPT_COOKIELIST, "ALL DELETE");
+        curl_easy_setopt(curl, CURLOPT_COOKIE, cookieLine.c_str());
+    }
 }
 
 size_t CHTTPClient::writeBodyCallback(char *ptr, size_t size, size_t nmemb, void *userdata)
@@ -372,6 +390,117 @@ void CHTTPClient::CleanupSession()
         curl_easy_cleanup(curl);
         curl = nullptr;
     }
+}
+
+bool CHTTPClient::UploadForm(const std::string &url, const HeadersMap &headers, const PostFormInfo &form, HttpResponse &out)
+{
+    out = HttpResponse{};
+
+    applyCommonOptions(url);
+    curl_easy_setopt(curl, CURLOPT_NOBODY, 0L);
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 0L);
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, nullptr);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &CHTTPClient::writeBodyCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &out);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &CHTTPClient::writeHeaderCallback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &out);
+
+    struct curl_slist *hdrs = nullptr;
+    for (const auto &kv : headers)
+    {
+        std::string line = kv.first + ": " + kv.second;
+        hdrs = curl_slist_append(hdrs, line.c_str());
+    }
+    if (!headers.empty())
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, hdrs);
+
+    struct curl_httppost *lastPost = nullptr;
+    struct curl_httppost **prevLastp = &lastPost;
+    for (const auto &field : form.fields)
+    {
+        CURLFORMcode fc;
+        if (!field.fileField.empty())
+        {
+            fc = curl_formadd(&lastPost, prevLastp,
+                CURLFORM_FILE, field.content.c_str(),
+                CURLFORM_PTRNAME, field.name.c_str(),
+                CURLFORM_FILENAME, field.fileField.c_str(),
+                CURLFORM_END);
+        }
+        else
+        {
+            fc = curl_formadd(&lastPost, prevLastp,
+                CURLFORM_COPYCONTENTS, field.content.c_str(),
+                CURLFORM_PTRNAME, field.name.c_str(),
+                CURLFORM_END);
+        }
+        if (fc != CURL_FORMADD_OK)
+        {
+            Logger::Logf("HTTP upload form: curl_formadd failed (%d)", fc);
+            continue;
+        }
+    }
+
+    struct curl_httppost *firstPost = lastPost ? lastPost->next : nullptr;
+    if (firstPost)
+        curl_easy_setopt(curl, CURLOPT_HTTPPOST, firstPost);
+
+    CURLcode res = firstPost ? curl_easy_perform(curl) : CURLE_OK;
+    if (firstPost)
+        curl_formfree(firstPost);
+
+    if (hdrs)
+        curl_slist_free_all(hdrs);
+
+    if (res != CURLE_OK)
+    {
+        out.errMessage = curl_easy_strerror(res);
+        Logger::Logf("HTTP upload form error url=%s err=%s", url.c_str(), out.errMessage.c_str());
+        return false;
+    }
+
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &out.iCode);
+    return true;
+}
+
+bool CHTTPClient::Post(const std::string &url, const HeadersMap &headers, HttpResponse &out)
+{
+    out = HttpResponse{};
+
+    applyCommonOptions(url);
+    curl_easy_setopt(curl, CURLOPT_NOBODY, 0L);
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 0L);
+    curl_easy_setopt(curl, CURLOPT_UPLOAD, 0L);
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, nullptr);
+    curl_easy_setopt(curl, CURLOPT_POST, 1L);
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, "");
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &CHTTPClient::writeBodyCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &out);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, &CHTTPClient::writeHeaderCallback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, &out);
+
+    struct curl_slist *hdrs = nullptr;
+    for (const auto &kv : headers)
+    {
+        std::string line = kv.first + ": " + kv.second;
+        hdrs = curl_slist_append(hdrs, line.c_str());
+    }
+    if (!headers.empty())
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, hdrs);
+
+    CURLcode res = curl_easy_perform(curl);
+    if (hdrs)
+        curl_slist_free_all(hdrs);
+
+    if (res != CURLE_OK)
+    {
+        out.errMessage = curl_easy_strerror(res);
+        Logger::Logf("HTTP POST error url=%s err=%s", url.c_str(), out.errMessage.c_str());
+        return false;
+    }
+
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &out.iCode);
+    return true;
 }
 
 std::string CHTTPClient::EncodeUrl(const std::string &url)

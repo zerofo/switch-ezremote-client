@@ -1,3 +1,6 @@
 [submodule "third_parties/lexbor"]
 	path = third_parties/lexbor
 	url = https://github.com/lexbor/lexbor.git
+[submodule "third_parties/libsmb2"]
+	path = third_parties/libsmb2
+	url = https://github.com/devkitPro/libsmb2.git
