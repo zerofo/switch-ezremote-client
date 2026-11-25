@@ -22,8 +22,10 @@ include_directories(
   source/pugixml
   third_parties
   ${LIBNSBMP}
+  ${LEXBOR_DIR}/src
 )
-
+set(LEXBOR_DIR third_parties/lexbor)
+add_subdirectory(${LEXBOR_DIR} ${PROJECT_BINARY_DIR}/lexbor)
 add_executable(${TARGET}
   source/pugixml/pugixml.cpp
   source/clients/apache.cpp
